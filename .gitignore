@@ -1,0 +1,18 @@
+# Build files
+build/
+*.o
+*.out
+
+# Binaries
+ftp_analyzer
+ftp_reconstruct
+
+# macOS
+.DS_Store
+
+# PCAP files
+*.pcap
+*.pcapng
+
+# VSCode
+.vscode/
