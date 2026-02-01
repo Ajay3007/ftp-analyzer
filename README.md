@@ -426,5 +426,5 @@ It demonstrates practical understanding of:
 
 Detailed system design and performance documentation:
 
-- 📄 [Scalable FTP Architecture Design](./Scalable_FTP_Architecture.docx)
+- 📄 [Scalable FTP Architecture Design](./Scalable_FTP_Architecture.pdf)
 - 🖼️ [100 Gbps Architecture Diagram (SVG)](./100gbps-architecture-design.svg)
