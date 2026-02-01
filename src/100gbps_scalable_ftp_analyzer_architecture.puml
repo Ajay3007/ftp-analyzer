@@ -1,0 +1,150 @@
+@startuml Scalable_FTP_Analyzer_Architecture
+
+title High-Level Scalable FTP Analyzer Architecture (100 Gbps)
+
+top to bottom direction
+
+' ===============================
+' Network Interface Layer
+' ===============================
+
+package "Network Interface Layer" {
+
+    component "100G NIC\n(25G x 4 Optional)" as NIC
+
+    note right of NIC
+      High-speed NIC
+      RSS + rte_flow
+      Kernel bypass (DPDK)
+    end note
+}
+
+' ===============================
+' RX Queue Layer
+' ===============================
+
+package "RX Queue Layer" {
+
+    component "RX Queues" as RX
+
+    note right of RX
+      Hardware queues
+      Flow locality
+      Low contention
+    end note
+}
+
+' ===============================
+' Distribution Layer
+' ===============================
+
+package "Distribution Layer" {
+
+    component "Distributor lcore 1\n(librte_distributor)" as D1
+    component "Distributor lcore 2\n(librte_distributor)" as D2
+
+    note right
+      Dynamic load balancing
+      Lock-free dispatch
+      Prevents starvation
+    end note
+}
+
+' ===============================
+' Worker Layer
+' ===============================
+
+package "Worker Processing Layer" {
+
+    component "Worker 1" as W1
+    component "Worker 2" as W2
+    component "Worker 3" as W3
+
+    component "Worker 4" as W4
+    component "Worker 5" as W5
+    component "Worker 6" as W6
+
+    note right
+      Packet parsing
+      TCP reassembly
+      File building
+      NUMA aware
+    end note
+}
+
+' ===============================
+' Storage Layer
+' ===============================
+
+package "Storage Layer" {
+
+    component "Distributed Storage\n(S3 / Ceph / HDFS)" as STORE
+
+    note right of STORE
+      High throughput
+      Fault tolerant
+      Streaming output
+    end note
+}
+
+' ===============================
+' Metadata Layer
+' ===============================
+
+package "Metadata Layer" {
+
+    database "Metadata Service\n(Redis / Cassandra)" as META
+
+    note right of META
+      Session info
+      File mapping
+      Logs
+    end note
+}
+
+' ===============================
+' Pipeline Connections
+' ===============================
+
+NIC --> RX : RSS / Flow Steering
+
+RX --> D1
+RX --> D2
+
+D1 --> W1
+D1 --> W2
+D1 --> W3
+
+D2 --> W4
+D2 --> W5
+D2 --> W6
+
+W1 --> STORE
+W2 --> STORE
+W3 --> STORE
+W4 --> STORE
+W5 --> STORE
+W6 --> STORE
+
+STORE --> META
+
+' ===============================
+' Global Notes
+' ===============================
+
+note bottom of D1
+  Each distributor manages
+  multiple workers
+end note
+
+note bottom of W1
+  Flow affinity:
+  One TCP flow per worker
+end note
+
+note bottom of STORE
+  Backpressure applied
+  if storage slows
+end note
+
+@enduml

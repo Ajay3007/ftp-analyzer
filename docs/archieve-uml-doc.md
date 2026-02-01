@@ -1,14 +1,16 @@
 # FTP File Reconstruction from PCAP (C++ Network Analyzer)
 
-## Overview
+## 📌 Overview
 
 This project implements a C++ utility to reconstruct files transferred using FTP by analyzing raw network traffic stored in PCAP files.
 
 The tool parses captured packets, extracts FTP control information, performs TCP reassembly, and reconstructs transferred files from network payloads.
 
+It was developed as part of a network systems interview assignment.
+
 ---
 
-## Problem Statement
+## 🎯 Problem Statement
 
 Given:
 
@@ -25,7 +27,7 @@ Design a utility that:
 
 ---
 
-## Features
+## 🚀 Features
 
 ✔ Offline PCAP analysis using libpcap  
 ✔ FTP control channel parsing  
@@ -39,7 +41,7 @@ Design a utility that:
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```bash
 ftp-analyzer/
@@ -59,11 +61,11 @@ ftp-analyzer/
 
 ---
 
-## High-Level Architecture
+## 🧠 High-Level Architecture
 
 The system is organized into independent modules.
 
-```bash
+```cpp
 +-------------+
 | main() |
 +-------------+
@@ -98,7 +100,7 @@ v
 
 ---
 
-## Architecture Components
+## 🏗️ Architecture Components
 
 ### 1. Main Module (`main.cpp`)
 
@@ -174,7 +176,7 @@ Responsible for:
 
 ---
 
-## Data Flow
+## 🔁 Data Flow
 
 ```bash
 PCAP File
@@ -193,7 +195,88 @@ Reconstructed Files
 
 ---
 
-## FTP Protocol Handling
+## 📐 UML Diagrams
+
+---
+
+### 1️⃣ Component Diagram
+
+```mermaid
+graph TD
+
+A[main] --> B[PcapReader]
+B --> C[FTPParser]
+B --> D[SessionMap]
+D --> E[TCPReassembly]
+E --> F[Output Files]
+```
+
+### 2️⃣ Class Diagram
+
+```mermaid
+classDiagram
+
+class Segment {
+    +uint32_t seq
+    +vector<uint8_t> data
+}
+
+class IPAddress {
+    +bool is_v6
+    +uint32_t v4
+    +in6_addr v6
+}
+
+class ConnKey {
+    +IPAddress src_ip
+    +IPAddress dst_ip
+    +uint16_t src_port
+    +uint16_t dst_port
+}
+
+class FTPParser {
+    +parsePASV()
+    +parseEPSV()
+    +parsePORT()
+    +parseEPRT()
+}
+
+class PcapReader {
+    +process()
+}
+
+class TCPReassembly {
+    +reassemble()
+}
+
+Segment --> ConnKey
+ConnKey --> PcapReader
+PcapReader --> FTPParser
+PcapReader --> TCPReassembly
+```
+
+### 3️⃣ Sequence Diagram (File Reconstruction)
+
+```mermaid
+sequenceDiagram
+
+participant User
+participant Main
+participant PcapReader
+participant FTPParser
+participant TCPReassembly
+
+User->>Main: Run analyzer
+Main->>PcapReader: process(pcap)
+PcapReader->>FTPParser: parse control msgs
+PcapReader->>TCPReassembly: collect segments
+TCPReassembly->>Main: write files
+Main->>User: Output reconstructed files
+```
+
+---
+
+## 🌐 FTP Protocol Handling
 
 ### FTP Connections
 
@@ -220,7 +303,7 @@ Client → Server: PORT / EPRT
 Server → Client: Data Connection
 ```
 
-## TCP Reassembly Strategy
+## 📦 TCP Reassembly Strategy
 
 The TCP reassembly process follows these steps:
 
@@ -237,9 +320,9 @@ This approach handles:
 
 ---
 
-## Environment Setup
+## ⚙️ Environment Setup
 
-### 1. Install Dependencies
+### 1️⃣ Install Dependencies
 
 ### Dependencies
 
@@ -260,7 +343,7 @@ xcode-select --install
 sudo apt install libpcap-dev cmake g++
 ```
 
-## 2. FTP Server Configuration (macOS)
+## 🔧 FTP Server Configuration (macOS)
 
 ### Create FTP Root
 
@@ -292,7 +375,7 @@ sudo lsof -i :21
 
 ---
 
-## Packet Capture
+## 📡 Packet Capture
 
 Start capture before FTP transfer:
 
@@ -304,12 +387,10 @@ Note: -i any is required on macOS to capture loopback traffic.
 
 --- 
 
-## FTP File Transfer
+## 📤 FTP File Transfer
 
 ```bash
 ftp -4 localhost
-# OR
-ftp -6 ::1  # for ipv6
 ```
 
 ### Inside FTP:
@@ -317,7 +398,7 @@ ftp -6 ::1  # for ipv6
 ```bash
 binary
 passive
-put sample.pdf
+put sample.jpg
 bye
 ```
 
@@ -354,7 +435,7 @@ recovered_2
 ...
 ```
 
-## Testing Procedure
+## 🧪 Testing Procedure
 
 1. Start the FTP server
 
@@ -376,7 +457,7 @@ sudo tcpdump -i lo0 -w ftp.pcap
 shasum original.pdf recovered_1
 ```
 
-## Current Capabilities
+## 📈 Current Capabilities
 
 | Feature            | Status |
 |--------------------|--------|
@@ -389,9 +470,7 @@ shasum original.pdf recovered_1
 | Duplicate Handling | ✅     |
 
 
-
-
-## Learning Outcomes
+## 📚 Learning Outcomes
 
 This project demonstrates:
 
@@ -407,7 +486,7 @@ This project demonstrates:
 
 - Systems programming
 
-## Conclusion
+## 🏁 Conclusion
 
 This project reconstructs FTP-transferred files directly from network traffic.
 
@@ -421,10 +500,3 @@ It demonstrates practical understanding of:
 
 - System-level C++ development
 
-
-## 📐 Architecture & Design Documents
-
-Detailed system design and performance documentation:
-
-- 📄 [Scalable FTP Architecture Design](./Scalable_FTP_Architecture.docx)
-- 🖼️ [100 Gbps Architecture Diagram (SVG)](./100gbps-architecture-design.svg)
