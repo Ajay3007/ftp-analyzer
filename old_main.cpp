@@ -29,6 +29,9 @@ struct ConnKey {
     uint16_t src_port;
     uint16_t dst_port;
 
+    // Define how to compare this ConnKey with another ConnKey.
+    // ConnKey is used as a key in a map. In C++, std::map needs to know:
+    // “How do I compare two keys?” Because C++ wouldn’t know how to sort keys in map.
     bool operator<(const ConnKey& o) const {
         return tie(src_ip, dst_ip, src_port, dst_port) <
                tie(o.src_ip, o.dst_ip, o.src_port, o.dst_port);
@@ -48,9 +51,9 @@ int g_link_offset = 0;
 bool parsePASV(const string& s, uint16_t& port) {
 
     regex r("\\((\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+)\\)");
-    smatch m;
+    smatch m;   // Match object -> A container that holds matched pieces.
 
-    if (regex_search(s, m, r)) {
+    if (regex_search(s, m, r)) {    // Search inside string s using regex r. If found → store result in m.
 
         int p1 = stoi(m[5]);
         int p2 = stoi(m[6]);
@@ -120,8 +123,9 @@ void handlePacket(const u_char* packet, uint32_t len) {
         if (payload_len == 0)
             return;
 
+        // Take payload_len bytes starting at payload, treat them as characters, and make a C++ string.
         string msg((char*)payload,
-                   payload_len);
+                   payload_len);    
 
         if (msg.find("227") != string::npos) {
 
@@ -148,7 +152,7 @@ void handlePacket(const u_char* packet, uint32_t len) {
         if (payload_len == 0)
             return;
 
-        ConnKey key{
+        ConnKey key{    // brace `{}` initialization to create and initialize objects
             src_ip,
             dst_ip,
             src_port,
@@ -157,13 +161,14 @@ void handlePacket(const u_char* packet, uint32_t len) {
 
         Segment seg;
 
+        // Convert TCP sequence number to machine format and store it.
         seg.seq =
-            ntohl(tcp->th_seq);
+            ntohl(tcp->th_seq); // Network → Host conversion (32-bit)
 
         seg.data.assign(payload,
-                        payload + payload_len);
+                        payload + payload_len); // Copy packet bytes into seg.data.
 
-        tcp_streams[key].push_back(seg);
+        tcp_streams[key].push_back(seg);    // Add this packet segment to its TCP connection list
     }
 }
 
@@ -177,30 +182,33 @@ void reassemble(const string& outfile) {
         return;
     }
 
+    // Single file transfer -> take first session only
     auto& vec =
-        tcp_streams.begin()->second;
+        tcp_streams.begin()->second; // Get the vector of segments of first connection.
 
+    // Sort by seg.seq ascending
     sort(vec.begin(), vec.end(),
          [](auto& a, auto& b) {
              return a.seq < b.seq;
          });
 
-    ofstream out(outfile, ios::binary);
+    // ios::binary -> Write raw bytes. No modification.
+    ofstream out(outfile, ios::binary);     // Opens output file
 
-    uint32_t next = vec[0].seq;
+    uint32_t next = vec[0].seq; // first packet seq
 
-    for (auto& s : vec) {
+    for (auto& s : vec) {   // For every Segment in vec.
 
-        if (s.seq < next)
-            continue;
+        if (s.seq < next)   // This handles TCP retransmissions
+            continue;   // Skips duplicate packets
 
         out.write((char*)s.data.data(),
-                  s.data.size());
+                  s.data.size());   // Writes TCP data in correct order
 
         next = s.seq + s.data.size();
     }
 
-    out.close();
+    out.close();    // Flushes buffer and closes file.
 
     cout << "[+] Reconstructed: "
          << outfile << endl;
@@ -267,10 +275,10 @@ int main(int argc, char* argv[]) {
                 &packet)) >= 0) {
 
         handlePacket(packet,
-                     header->caplen);
+                     header->caplen);   // header->caplen : Number of bytes captured.
     }
 
-    pcap_close(handle);
+    pcap_close(handle);     // Closes file and frees memory.
 
     reassemble(argv[2]);
 
