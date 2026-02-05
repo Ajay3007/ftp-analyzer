@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <map>
 
 
 void TCPReassembly::reassemble(const SessionMap& sessions,
@@ -15,10 +16,6 @@ void TCPReassembly::reassemble(const SessionMap& sessions,
         return;
     }
 
-    int index = 1;
-
-
-    /* Process Each TCP Session */
 
     for (const auto& pair : sessions) {
 
@@ -27,49 +24,121 @@ void TCPReassembly::reassemble(const SessionMap& sessions,
         if (vec.empty())
             continue;
 
-        std::vector<Segment> data = vec;
 
-        std::sort(data.begin(),
-                  data.end(),
-                  [](auto& a, auto& b) {
+        /* ============================
+         * Sort Segments
+         * ============================ */
+
+        std::vector<Segment> segs = vec;
+
+        std::sort(segs.begin(),
+                  segs.end(),
+                  [](const Segment& a,
+                     const Segment& b) {
+
                       return a.seq < b.seq;
                   });
 
 
-        /* Generate Output Filename */
+        /* ============================
+         * Reassembly Buffer
+         * ============================ */
+
+        std::map<uint32_t,
+                 std::vector<uint8_t>> buffer;
+
+
+        uint32_t base_seq = segs[0].seq;
+
+
+        /* ============================
+         * Insert Segments
+         * ============================ */
+
+        for (const auto& s : segs) {
+
+            buffer[s.seq] = s.data;
+        }
+
+
+        /* ============================
+         * Generate Output Filename
+         * ============================ */
 
         std::ostringstream name;
 
-        name << outfile << "_" << pair.first.filename;
-
+        name << outfile << "_"
+             << pair.first.filename;
 
         std::string filename = name.str();
 
 
-        /* Write File */
+        /* ============================
+         * Write Stream
+         * ============================ */
 
         std::ofstream out(filename,
                           std::ios::binary);
 
-        uint32_t next = data[0].seq;
 
-        for (auto& s : data) {
+        uint32_t expected = base_seq;
 
-            if (s.seq < next)
+
+        for (auto& it : buffer) {
+
+            uint32_t seq = it.first;
+            auto& data = it.second;
+
+
+            /* Skip old/retransmitted data */
+            if (seq < expected) {
+
+                uint32_t diff =
+                    expected - seq;
+
+                if (diff >= data.size())
+                    continue;
+
+                out.write(
+                    (char*)data.data() + diff,
+                    data.size() - diff);
+
+                expected +=
+                    data.size() - diff;
+
                 continue;
+            }
 
+
+            /* Gap detected */
+            if (seq > expected) {
+
+                uint32_t gap =
+                    seq - expected;
+
+                std::vector<char> zeros(
+                    gap, 0);
+
+                out.write(zeros.data(),
+                          gap);
+
+                expected += gap;
+            }
+
+
+            /* Write data */
             out.write(
-                (char*)s.data.data(),
-                s.data.size());
+                (char*)data.data(),
+                data.size());
 
-            next = s.seq + s.data.size();
+            expected += data.size();
         }
+
 
         out.close();
 
+
         std::cout << "[+] Reconstructed: "
                   << filename << std::endl;
-
-        index++;
     }
 }

@@ -4,7 +4,9 @@
 
 This project implements a C++ utility to reconstruct files transferred using FTP by analyzing raw network traffic stored in PCAP files.
 
-The tool parses captured packets, extracts FTP control information, performs TCP reassembly, and reconstructs transferred files from network payloads.
+The tool parses captured packets, extracts FTP control information, performs TCP reassembly, and reconstructs transferred files from network payloads — even when the PCAP contains unrelated “noise” protocols such as ARP, ICMP, DHCP, mDNS, etc.
+
+It works completely offline and does not require access to the original FTP server.
 
 ---
 
@@ -12,30 +14,33 @@ The tool parses captured packets, extracts FTP control information, performs TCP
 
 Given:
 
-1. An FTP server
-2. A file transferred using FTP
-3. A PCAP file captured on the server
+- An FTP server
+- Files transferred using FTP
+- A PCAP file captured on the network
 
 Design a utility that:
 
-- Parses the PCAP
+- Parses the PCAP file
+- Identifies FTP control and data channels
 - Extracts raw file bytes
 - Reassembles TCP streams
-- Reconstructs the original file
+- Reconstructs the original files
 
 ---
 
 ## Features
 
-✔ Offline PCAP analysis using libpcap  
-✔ FTP control channel parsing  
-✔ Passive FTP (PASV / EPSV) support  
-✔ Active FTP (PORT / EPRT) parsing support  
-✔ IPv4 and IPv6 support  
-✔ TCP segment reassembly  
-✔ Duplicate packet handling  
-✔ Multi-session file reconstruction  
-✔ Modular and extensible design  
+✔ Offline PCAP analysis using libpcap
+✔ FTP control channel parsing
+✔ Passive FTP (PASV / EPSV) support
+✔ Active FTP (PORT / EPRT) parsing support
+✔ IPv4 and IPv6 support
+✔ TCP segment reassembly
+✔ Duplicate packet handling
+✔ Multi-session file reconstruction
+✔ Filename extraction from control channel
+✔ Works with noisy PCAPs (mixed protocols)
+✔ Modular and extensible design
 
 ---
 
@@ -45,17 +50,24 @@ Design a utility that:
 ftp-analyzer/
 │
 ├── src/
-│ ├── main.cpp
-│ ├── pcap_reader.cpp / .h
-│ ├── link_layer.cpp / .h
-│ ├── ftp_parser.cpp / .h
-│ ├── tcp_reassembly.cpp / .h
-│ └── session_manager.h
+│   ├── main.cpp
+│   ├── pcap_reader.cpp / .h
+│   ├── link_layer.cpp / .h
+│   ├── ftp_parser.cpp / .h
+  ├── tcp_reassembly.cpp / .h
+  └── session_manager.h
+│
+├── captures/
+│   ├── ftp_2file.pcap
+│   └── ftp6.pcap
+│
+├── docs/
+│   ├── 100G_SCALE_DESIGN.md
+│   └── architecture-uml-doc.md
 │
 ├── CMakeLists.txt
 └── README.md
 ```
-
 
 ---
 
@@ -65,36 +77,34 @@ The system is organized into independent modules.
 
 ```bash
 +-------------+
-| main() |
+|   main()    |
 +-------------+
-|
-v
+     |
+     v
 +-------------+
-| PcapReader |
+| PcapReader  |
 +-------------+
-|
-v
+     |
+     v
 +-------------+
-| FTPParser |
+| FTPParser   |
 +-------------+
-|
-v
+     |
+     v
 +-------------+
-| SessionMap |
+| SessionMap  |
 +-------------+
-|
-v
+     |
+     v
 +-------------+
 | TCPReasmblr |
 +-------------+
-|
-v
+     |
+     v
 +-------------+
 | Output File |
 +-------------+
-
 ```
-
 
 ---
 
@@ -102,34 +112,41 @@ v
 
 ### 1. Main Module (`main.cpp`)
 
-Responsible for:
+Responsibilities:
 
-- Parsing CLI arguments
-- Starting PCAP processing
-- Triggering TCP reassembly
+- Parse command-line arguments
+- Initialize session structures
+- Start PCAP processing
+- Trigger TCP reassembly
 
 ---
 
 ### 2. PCAP Reader (`pcap_reader.*`)
 
-Responsible for:
+Responsibilities:
 
-- Opening PCAP file
-- Reading packets using libpcap
-- Detecting link-layer offsets
-- Parsing IPv4 / IPv6 headers
-- Parsing TCP headers
-- Extracting payload
-- Identifying FTP control/data channels
+- Open PCAP file
+- Read packets using `pcap_next_ex()` / libpcap APIs
+- Detect link-layer offsets
+- Parse IPv4 / IPv6 headers
+- Parse TCP headers
+- Extract payload
+- Filter non-TCP traffic and ignore protocol noise
+- Identify FTP control and data channels
 
 ---
 
 ### 3. Link Layer Handler (`link_layer.*`)
 
-Responsible for:
+Responsibilities:
 
-- Detecting capture type (Ethernet / Loopback)
-- Calculating network-layer offset
+- Detect capture type (Ethernet / Loopback)
+- Calculate network-layer offset
+
+Uses:
+
+- `pcap_datalink()`
+- `DLT_EN10MB`, `DLT_NULL`
 
 ---
 
@@ -139,14 +156,17 @@ Responsible for parsing FTP control messages.
 
 Supported commands:
 
-| Mode | Command | Protocol |
-|------|---------|----------|
-| Passive | PASV | IPv4 |
-| Passive | EPSV | IPv6 |
-| Active | PORT | IPv4 |
-| Active | EPRT | IPv6 |
+| Mode    | Command | Protocol |
+|---------|---------|----------|
+| Passive | PASV    | IPv4     |
+| Passive | EPSV    | IPv6     |
+| Active  | PORT    | IPv4     |
+| Active  | EPRT    | IPv6     |
 
-Extracts data channel ports.
+Extracts:
+
+- Data channel port
+- Current filename (from `STOR` / `STOU` commands)
 
 ---
 
@@ -159,18 +179,22 @@ Defines core data structures:
 - Connection Key
 - Session Map
 
-Provides unique session identification.
+Each session is uniquely identified by:
+
+`<Src IP, Dst IP, Src Port, Dst Port, Filename>`
 
 ---
 
 ### 6. TCP Reassembly (`tcp_reassembly.*`)
 
-Responsible for:
+Responsibilities:
 
-- Sorting segments by sequence number
-- Removing duplicates
-- Writing payloads to files
-- Handling multiple sessions
+- Sort segments by sequence number
+- Remove duplicates
+- Handle retransmissions and overlapping segments
+- Rebuild byte stream
+- Write output files
+- Support multiple sessions concurrently
 
 ---
 
@@ -178,18 +202,17 @@ Responsible for:
 
 ```bash
 PCAP File
-↓
+  ↓
 PcapReader
-↓
+  ↓
 Packet Parsing
-↓
+  ↓
 SessionMap (ConnKey → Segments)
-↓
+  ↓
 TCP Reassembly
-↓
+  ↓
 Reconstructed Files
 ```
-
 
 ---
 
@@ -203,7 +226,6 @@ FTP uses two connections:
 |---------|----------------|---------|
 | Control | Commands       | 21      |
 | Data    | File Transfer  | Dynamic |
-
 
 ### Passive Mode
 
@@ -222,30 +244,31 @@ Server → Client: Data Connection
 
 ## TCP Reassembly Strategy
 
-The TCP reassembly process follows these steps:
+Steps:
 
 - Store segments per connection
-- Sort segments by sequence number
-- Skip duplicate packets
-- Write payload data in order
+- Sort by sequence number
+- Skip overlapping data
+- Ignore duplicates
+- Write payload in order
 
-This approach handles:
+Handles:
 
-- ✔ Out-of-order packets  
-- ✔ Retransmissions  
-- ✔ Overlapping segments  
+- ✔ Out-of-order packets
+- ✔ Retransmissions
+- ✔ Overlapping segments
+- ✔ Packet duplication
 
 ---
 
 ## Environment Setup
-
-### 1. Install Dependencies
 
 ### Dependencies
 
 - libpcap
 - CMake
 - C++17
+- pure-ftpd (for testing)
 
 ### macOS
 
@@ -260,16 +283,17 @@ xcode-select --install
 sudo apt install libpcap-dev cmake g++
 ```
 
-## 2. FTP Server Configuration (macOS)
+### FTP Server Configuration (macOS)
 
-### Create FTP Root
+#### Create FTP Root
 
 ```bash
 sudo mkdir -p /tmp/ftp
 sudo chown $USER /tmp/ftp
+sudo chmod 755 /tmp/ftp
 ```
 
-### Create Virtual User
+#### Create Virtual User
 
 ```bash
 sudo pure-pw useradd ftpuser \
@@ -278,13 +302,19 @@ sudo pure-pw useradd ftpuser \
   -m
 ```
 
-### Start Server
+#### Build Database
+
+```bash
+sudo pure-pw mkdb
+```
+
+#### Start Server
 
 ```bash
 sudo pure-ftpd -B -l puredb:/opt/homebrew/etc/pureftpd.pdb
 ```
 
-### Verify:
+#### Verify
 
 ```bash
 sudo lsof -i :21
@@ -294,88 +324,53 @@ sudo lsof -i :21
 
 ## Packet Capture
 
-Start capture before FTP transfer:
+Start capture before transfer:
 
 ```bash
 sudo tcpdump -i lo0 -w ftp.pcap
 ```
 
-### Example : Packet Capture on my System
+Example capture output:
 
-```bash
-(base) dukhi8ma@Ajays-MacBook-Air captures % sudo tcpdump -i lo0 -w ftp_2file.pcap
-
-Password:
-tcpdump: listening on lo0, link-type NULL (BSD loopback), snapshot length 524288 bytes
-^C1494 packets captured
-1494 packets received by filter
-0 packets dropped by kernel
-(base) dukhi8ma@Ajays-MacBook-Air captures % 
-```
-
---- 
-
-## FTP File Transfer
-
-```bash
-ftp -4 localhost
-# OR
-ftp -6 ::1  # for ipv6
-```
-
-### Inside FTP:
-
-```bash
-binary
-passive
-put sample.pdf
-bye
-```
-
-### Example : FTP file transfer on my System
-
-```bash
-(base) dukhi8ma@Ajays-MacBook-Air pertsol-assignment % ftp -4 localhost
-Connected to localhost.
-220---------- Welcome to Pure-FTPd [privsep] [TLS] ----------
-220-You are user number 1 of 50 allowed.
-220-Local time is now 18:04. Server port: 21.
-220-IPv6 connections are also welcome on this server.
-220 You will be disconnected after 15 minutes of inactivity.
-Name (localhost:dukhi8ma): ftpuser
-331 User ftpuser OK. Password required
-Password: 
-230 OK. Current directory is /
-ftp> binary
-200 TYPE is now 8-bit binary
-ftp> passive
-Passive mode on.
-ftp> put file-example_PDF_1MB.pdf 
-227 Entering Passive Mode (127,0,0,1,108,247)
-150 Accepted data connection
-226-File successfully transferred
-226 0.004 seconds (measured here), 227.17 Mbytes per second
-1042157 bytes sent in 0.0041 seconds (241.8196 Mbytes/s)
-ftp> put 
-.DS_Store                   ftp_analyzer               
-file-example_PDF_1MB.pdf    matrices-full-chapter-1.pdf
-ftp> put matrices-full-chapter-1.pdf 
-227 Entering Passive Mode (127,0,0,1,242,223)
-150 Accepted data connection
-226-File successfully transferred
-226 0.018 seconds (measured here), 371.01 Mbytes per second
-6945047 bytes sent in 0.0161 seconds (411.5137 Mbytes/s)
-ftp> bye
-221-Goodbye. You uploaded 7801 and downloaded 0 kbytes.
-221 Logout.
-(base) dukhi8ma@Ajays-MacBook-Air pertsol-assignment % 
+```text
+tcpdump: listening on lo0
+1494 packets captured
 ```
 
 ---
 
-## 🛠️ Build Instructions
+## FTP File Transfer
 
-### Build
+Connect:
+
+```bash
+ftp -4 localhost
+# OR
+ftp -6 ::1
+```
+
+Inside FTP:
+
+```text
+binary
+passive
+put file.pdf
+bye
+```
+
+Example session:
+
+```text
+ftp> binary
+ftp> passive
+ftp> put sample.pdf
+ftp> put image.png
+ftp> bye
+```
+
+---
+
+## Build Instructions
 
 ```bash
 mkdir build
@@ -384,74 +379,104 @@ cmake ..
 make
 ```
 
-#### ▶️ Usage
+### Usage
 
 ```bash
 ./ftp_analyzer <pcap_file> <output_prefix>
 ```
 
-#### Example
+### Example
 
 ```bash
-./ftp_analyzer ftp.pcap recovered
+./ftp_analyzer ftp_2file.pcap recovered
 ```
 
-#### Output
+Expected output examples printed by the tool:
 
-```bash
-recovered_1
-recovered_2
-...
-```
-
-#### Example : Output on my System
-
-```bash
-(base) dukhi8ma@Ajays-MacBook-Air build % make clean
-(base) dukhi8ma@Ajays-MacBook-Air build % cmake ..
--- Configuring done (0.1s)
--- Generating done (0.0s)
--- Build files have been written to: /Users/dukhi8ma/Desktop/pertsol-assignment/ftp_analyzer/build
-(base) dukhi8ma@Ajays-MacBook-Air build % make
-[ 16%] Building CXX object CMakeFiles/ftp_analyzer.dir/src/main.cpp.o
-[ 33%] Building CXX object CMakeFiles/ftp_analyzer.dir/src/pcap_reader.cpp.o
-[ 50%] Building CXX object CMakeFiles/ftp_analyzer.dir/src/link_layer.cpp.o
-[ 66%] Building CXX object CMakeFiles/ftp_analyzer.dir/src/ftp_parser.cpp.o
-[ 83%] Building CXX object CMakeFiles/ftp_analyzer.dir/src/tcp_reassembly.cpp.o
-[100%] Linking CXX executable ftp_analyzer
-[100%] Built target ftp_analyzer
-(base) dukhi8ma@Ajays-MacBook-Air build % ./ftp_analyzer ../captures/ftp_2file.pcap ../samples/rec_2files
-[+] Loopback capture
+```text
+[+] Ethernet capture
 [+] PASV Port: 27895
-[+] File: file-example_PDF_1MB.pdf
+[+] File: sample.pdf
 [+] PASV Port: 62175
-[+] File: matrices-full-chapter-1.pdf
-[+] Reconstructed: ../samples/rec_2files_file-example_PDF_1MB.pdf
-[+] Reconstructed: ../samples/rec_2files_matrices-full-chapter-1.pdf
-(base) dukhi8ma@Ajays-MacBook-Air build % 
+[+] File: image.png
+[+] Reconstructed: recovered_sample.pdf
+[+] Reconstructed: recovered_image.png
 ```
+
+---
 
 ## Testing Procedure
 
-1. Start the FTP server
-
-2. Capture network traffic
-
-```bash
-sudo tcpdump -i lo0 -w ftp.pcap
-```
-
-3. Upload file via FTP
-
+1. Start FTP server
+2. Start capture
+3. Transfer files
 4. Stop capture
-
-5. Run the analyzer
-
-6. Verify file integrity
+5. Run analyzer
+6. Verify hash
 
 ```bash
-shasum original.pdf recovered_1
+shasum original.pdf recovered_sample.pdf
 ```
+
+---
+
+## Debugging FTP Server Issues
+
+1. Database Error
+
+Error:
+
+Unable to read indexed puredb file
+
+Fix:
+
+```bash
+sudo pure-pw mkdb
+sudo pkill pure-ftpd
+sudo pure-ftpd -B -l puredb:/opt/homebrew/etc/pureftpd.pdb
+```
+
+2. Home Directory Error
+
+Error:
+
+Home directory not available
+
+Fix:
+
+```bash
+sudo mkdir -p /tmp/ftp
+sudo chown $USER /tmp/ftp
+sudo chmod 755 /tmp/ftp
+```
+
+3. Verify User
+
+```bash
+sudo pure-pw show ftpuser
+```
+
+Check:
+
+- UID
+- Directory
+- Permissions
+
+4. Check Listening Ports
+
+```bash
+sudo lsof -i :21
+```
+
+Confirms IPv4 / IPv6 availability.
+
+---
+
+## Handling Noisy PCAP Files
+
+The analyzer ignores unrelated traffic such as ARP, ICMP, DHCP, mDNS, STP and UDP. Only TCP + FTP packets are processed, enabling reconstruction from real-world mixed-protocol captures.
+
+---
 
 ## Current Capabilities
 
@@ -463,45 +488,35 @@ shasum original.pdf recovered_1
 | Active FTP         | ✅     |
 | Multi-Session      | ✅     |
 | TCP Reassembly     | ✅     |
-| Duplicate Handling | ✅     |
+| Noise Handling     | ✅     |
+| Filename Mapping   | ✅     |
 
-
-
+---
 
 ## Learning Outcomes
 
 This project demonstrates:
 
 - Low-level packet analysis
-
-- TCP protocol understanding
-
+- TCP/IP protocol understanding
 - FTP protocol internals
-
-- Network debugging
-
-- Modular C++ design
-
+- libpcap usage
 - Systems programming
+- Debugging network services
+- Scalable design thinking
+
+---
 
 ## Conclusion
 
-This project reconstructs FTP-transferred files directly from network traffic.
+This project successfully reconstructs FTP-transferred files from raw PCAP files. It demonstrates practical expertise in packet capture analysis, protocol parsing, TCP reassembly and C++ systems programming. The tool works reliably on real-world captures containing mixed protocol traffic.
 
-It demonstrates practical understanding of:
-
-- Networking protocols
-
-- Packet captures
-
-- TCP reassembly
-
-- System-level C++ development
-
+---
 
 ## 📐 Architecture & Design Documents
 
-Detailed system design and performance documentation:
+Detailed scalable system design:
+
 
 - 📄 [Scalable FTP Architecture Design](./Scalable_FTP_Architecture.pdf)
 - 🖼️ [100 Gbps Architecture Diagram (SVG)](./100gbps-architecture-design.svg)

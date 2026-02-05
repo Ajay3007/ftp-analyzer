@@ -4,50 +4,61 @@
 #include <map>
 #include <cstdint>
 #include <cstring>
-#include <netinet/in.h>   // in6_addr
+#include <netinet/in.h>
 #include <string>
 
-
 /* ================================
- * TCP Segment Structure
+ * TCP Segment
  * ================================ */
 struct Segment {
     uint32_t seq;
     std::vector<uint8_t> data;
 };
 
-
 /* ================================
- * Unified IP Address (IPv4 + IPv6)
+ * IP Address (IPv4 + IPv6)
  * ================================ */
 struct IPAddress {
 
-    bool is_v6;   // false = IPv4, true = IPv6
+    bool is_v6 = false;
 
     union {
-        uint32_t v4;        // IPv4 address
-        struct in6_addr v6; // IPv6 address
+        uint32_t v4;
+        struct in6_addr v6;
     };
 
-    /* Compare two IP addresses */
     bool operator<(const IPAddress& o) const {
 
-        // IPv4 always comes before IPv6
         if (is_v6 != o.is_v6)
             return is_v6 < o.is_v6;
 
-        // Both IPv4
         if (!is_v6)
             return v4 < o.v4;
 
-        // Both IPv6
         return memcmp(&v6, &o.v6, sizeof(v6)) < 0;
     }
 };
 
+/* ================================
+ * FTP Session State
+ * ================================ */
+struct FtpSession {
+
+    enum State {
+        CONNECTED,
+        PASV_SET,
+        TRANSFERRING,
+        DONE
+    };
+
+    State state = CONNECTED;
+
+    uint16_t data_port = 0;
+    std::string filename;
+};
 
 /* ================================
- * Connection Key (IPv4 + IPv6)
+ * Connection Key
  * ================================ */
 struct ConnKey {
 
@@ -67,16 +78,27 @@ struct ConnKey {
                         dst_port,
                         filename)
             < std::tie(o.src_ip,
-                        o.dst_ip,
-                        o.src_port,
-                        o.dst_port,
-                        o.filename);
-
+                       o.dst_ip,
+                       o.src_port,
+                       o.dst_port,
+                       o.filename);
     }
 };
 
-
 /* ================================
- * Session Map
+ * Control Session Key
  * ================================ */
+struct ControlKey {
+
+    IPAddress client_ip;
+    uint16_t client_port;
+
+    bool operator<(const ControlKey& o) const {
+
+        return std::tie(client_ip, client_port) <
+               std::tie(o.client_ip, o.client_port);
+    }
+};
+
 using SessionMap = std::map<ConnKey, std::vector<Segment>>;
+using ControlMap = std::map<ControlKey, FtpSession>;
